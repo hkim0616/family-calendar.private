@@ -1,22 +1,35 @@
-import { createClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
 
-// Server-side Supabase client backed by the service-role key.
-// Bypasses RLS, so this MUST only be imported from server components,
-// route handlers, or server actions — never from client components.
+import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
+
+/**
+ * Supabase client for server components, server actions and route handlers.
+ *
+ * It uses the public "anon" key and carries the signed-in user's session from
+ * their cookies, which means every query runs *as that user* and Row-Level
+ * Security applies. There is deliberately no service-role client in this app:
+ * that key bypasses RLS entirely, so keeping it out removes any chance of
+ * accidentally serving one family's data to another.
+ */
 export function createSupabaseServerClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const cookieStore = cookies();
 
-  if (!url || !serviceRoleKey) {
-    throw new Error(
-      "Missing Supabase server env vars: NEXT_PUBLIC_SUPABASE_URL and/or SUPABASE_SERVICE_ROLE_KEY",
-    );
-  }
-
-  return createClient(url, serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
+  return createServerClient(supabaseUrl(), supabaseAnonKey(), {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options);
+          });
+        } catch {
+          // Server Components aren't allowed to set cookies. That's fine —
+          // middleware.ts refreshes the session cookie on every request.
+        }
+      },
     },
   });
 }

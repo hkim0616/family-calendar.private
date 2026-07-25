@@ -1,93 +1,118 @@
-# Family Calendar
+# Family Hub
 
-A small private web app for sharing a calendar across the family.
-Built with **Next.js 14 (App Router)**, **TypeScript**, **Tailwind CSS**, and **Supabase** (Postgres) as the data layer.
+A private, mobile-first app for one family to share memos, a calendar, a
+grocery list and anniversaries. Installs to a phone's home screen like a native
+app.
 
-> Status: scaffolding only. Event CRUD UI and the iCal subscription endpoint land in the next step.
+**Setting it up for the first time? → [SETUP.md](./SETUP.md)**
 
 ## Tech stack
 
-- Next.js 14 App Router + React 18
-- TypeScript, Tailwind CSS, ESLint
-- Supabase (`@supabase/supabase-js`, `@supabase/ssr`)
-- `ical-generator` (for the upcoming `.ics` feed)
-- `date-fns`, `zod`
+- **Next.js 14** (App Router) + React 18 + TypeScript
+- **Tailwind CSS** for styling
+- **Supabase** — Postgres database, email sign-in, Realtime
+- **Vercel** for hosting
+- Installable PWA (web manifest + service worker)
 
-## Local development
+## Build phases
 
-### 1. Prerequisites
+| Phase  | Scope                                                      | Status      |
+| ------ | ---------------------------------------------------------- | ----------- |
+| **P0** | Foundation: PWA shell, sign-in, database schema + security | ✅ Done     |
+| **P1** | Families & members: create a family, invite, join          | Not started |
+| **P2** | Memos & grocery list, both updating live                   | Not started |
+| **P3** | Schedule (month + agenda) & anniversary reminders          | Not started |
+| **P4** | Home dashboard & final PWA polish                          | Not started |
 
-- Node.js 18.17+ (Node 20 LTS recommended)
-- A Supabase project (free tier is fine)
+## How the data is protected
 
-### 2. Install dependencies
+Every row belongs to exactly one `family_id`, and **Row-Level Security** (RLS)
+policies in Postgres enforce that a signed-in user can only read and write rows
+for families they're a member of. This is enforced by the database, not by the
+app — so a bug in the UI can't leak another family's data.
 
-```bash
-npm install
-```
+Two deliberate choices back that up:
 
-### 3. Configure environment variables
+1. **No service-role key.** The app only ever uses Supabase's public `anon` key,
+   which is subject to RLS. The service-role key bypasses RLS entirely, so it is
+   never added to the project at all.
+2. **Joining a family goes through vetted functions.** No policy lets you insert
+   yourself into an arbitrary family. `create_family()` and `join_family()` are
+   the only ways in, and each validates its input.
 
-Copy the template and fill in values:
+### Verifying it
 
-```bash
-cp .env.example .env.local
-```
-
-| Key | Where to find it | Notes |
-| --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Dashboard → Project Settings → API → Project URL | Exposed to the browser |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Project Settings → API → `anon` `public` key | Exposed to the browser |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Dashboard → Project Settings → API → `service_role` `secret` key | **Server only** — bypasses RLS, must never reach the browser |
-| `CALENDAR_SUBSCRIPTION_TOKEN` | Generate any random string (`openssl rand -hex 32`) | Shared secret for the future iCal subscription URL |
-
-`.env.local` is gitignored. `.env.example` is the committed template — keep it in sync when you add new variables.
-
-### 4. Apply the database schema
-
-The schema lives in [`supabase/schema.sql`](./supabase/schema.sql).
-
-The simplest way to apply it:
-
-1. Open your project in the [Supabase Dashboard](https://supabase.com/dashboard).
-2. Go to **SQL Editor** → **New query**.
-3. Paste the contents of `supabase/schema.sql` and click **Run**.
-
-This creates the `events` table, the `start_at` / `end_at` indexes, and the `updated_at` auto-update trigger. The script is idempotent (`if not exists` / `create or replace`), so you can re-run it safely.
-
-If you use the Supabase CLI instead, you can pipe the file in:
+[`supabase/tests/rls-test.sql`](./supabase/tests/rls-test.sql) sets up two
+unrelated families and asserts that neither can see or modify the other's memos,
+events, groceries, anniversaries, members or invite code. Run it against a
+throwaway Postgres 16 database after any schema change:
 
 ```bash
-psql "$SUPABASE_DB_URL" -f supabase/schema.sql
+initdb -D /tmp/pgtest -U postgres --auth=trust
+pg_ctl -D /tmp/pgtest -o '-p 55432 -k /tmp' start
+psql -h /tmp -p 55432 -U postgres -f supabase/tests/rls-test.sql
 ```
 
-### 5. Run the dev server
+Every assertion should print `PASS`.
 
-```bash
-npm run dev
-```
+## Data model
 
-Open <http://localhost:3000>. The home page is a healthcheck — it tries to read the `events` table and shows whether the Supabase connection is working.
+All content tables carry a `family_id`.
+
+| Table           | Purpose                                     |
+| --------------- | ------------------------------------------- |
+| `families`      | One household, plus its invite code         |
+| `members`       | A person in a family, linked to their login |
+| `memos`         | Shared notes / to-dos, with a done flag     |
+| `events`        | Shared calendar entries                     |
+| `grocery_items` | Shopping list, with a checked flag          |
+| `anniversaries` | Yearly dates with a reminder lead time      |
+
+`memos` and `grocery_items` are published to Supabase Realtime, so changes
+appear on other phones without a refresh.
 
 ## Project layout
 
 ```
-app/                  Next.js App Router pages and layouts
-  page.tsx            Healthcheck home page
-  layout.tsx          Root layout
-lib/supabase/
-  client.ts           Browser Supabase client (anon key)
-  server.ts           Server Supabase client (service-role key)
+app/
+  page.tsx                   Home screen
+  login/page.tsx             Email + 6-digit code sign-in
+  offline/page.tsx           Shown when the phone has no connection
+  auth/callback/route.ts     Handles the email link as a fallback
+  auth/signout/route.ts      Sign out
+  layout.tsx                 Root layout, PWA metadata
+  globals.css                Design tokens (light + dark)
+components/
+  service-worker-registrar.tsx
+lib/
+  env.ts                     Reads env vars with helpful errors
+  supabase/client.ts         Browser client
+  supabase/server.ts         Server client (respects RLS)
+  supabase/middleware.ts     Session refresh + route protection
+middleware.ts                Runs the above on every request
+public/
+  manifest.webmanifest       Makes the app installable
+  sw.js                      Service worker
+  icons/                     App icons
 supabase/
-  schema.sql          Database schema (apply via SQL Editor)
-.env.example          Template for required environment variables
+  schema.sql                 Tables, security policies, functions
+  tests/rls-test.sql         Security regression test
 ```
 
 ## Scripts
 
-| Command | Description |
-| --- | --- |
-| `npm run dev` | Start the dev server |
-| `npm run build` | Production build |
-| `npm run start` | Run the production build |
-| `npm run lint` | ESLint |
+| Command         | Description                |
+| --------------- | -------------------------- |
+| `npm run dev`   | Dev server on port 3000    |
+| `npm run build` | Production build           |
+| `npm run start` | Serve the production build |
+| `npm run lint`  | ESLint                     |
+
+## Notes
+
+- **Sign-in uses an emailed 6-digit code, not a magic link.** On iOS, a link in
+  Mail opens Safari and lands the user outside the installed app; a code keeps
+  them in it. The email link still works as a fallback.
+- **The service worker doesn't cache pages or data** — only static assets and an
+  offline notice. Cached HTML is how PWAs end up showing stale lists or the
+  wrong person's signed-in screen.
