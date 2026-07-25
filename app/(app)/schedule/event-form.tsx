@@ -169,7 +169,9 @@ export function EventForm({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           maxLength={120}
-          required
+          // See the note on the end-time field: validation lives in submit() so
+          // the inline message always shows.
+          aria-required="true"
           autoFocus={!existing}
         />
       </div>
@@ -200,7 +202,7 @@ export function EventForm({
                 setStartDay(e.target.value);
                 if (endDay < e.target.value) setEndDay(e.target.value);
               }}
-              required
+              aria-required="true"
             />
           </div>
           <div>
@@ -214,7 +216,7 @@ export function EventForm({
               value={endDay}
               min={startDay}
               onChange={(e) => setEndDay(e.target.value)}
-              required
+              aria-required="true"
             />
           </div>
         </div>
@@ -236,7 +238,7 @@ export function EventForm({
                   setEndAt(addHour(e.target.value));
                 }
               }}
-              required
+              aria-required="true"
             />
           </div>
           <div>
@@ -255,7 +257,7 @@ export function EventForm({
               className="input"
               value={endAt}
               onChange={(e) => setEndAt(e.target.value)}
-              required
+              aria-required="true"
             />
           </div>
         </div>

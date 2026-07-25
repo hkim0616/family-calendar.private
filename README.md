@@ -21,8 +21,7 @@ app.
 | **P0** | PWA shell, magic-link sign-in, schema + security, create-a-family, home screen | ✅ Done |
 | **P1** | Memos board + live grocery list, join-a-family by invite code | ✅ Done   |
 | **P2** | Schedule (month + agenda) + .ics subscription feed          | ✅ Done     |
-| **P3** | Anniversaries with lead-time reminders                     | Not started |
-| **P4** | Home dashboard & final PWA polish                          | Not started |
+| **P3** | Anniversaries + aggregated Home dashboard                   | ✅ Done     |
 
 ## How the data is protected
 
@@ -128,15 +127,56 @@ the independent `icalendar` Python parser.
 `lib/calendar.test.ts` runs green in eight timezones spanning both sides of the
 date line, including half-hour offsets.
 
+## Recurring dates
+
+`lib/anniversaries.ts` works entirely on `"YYYY-MM-DD"` strings rather than
+`Date` objects. An anniversary is a position on a calendar, not an instant, and
+the `date` column stores it that way — converting to `Date` and back is how
+these end up a day out for anyone outside UTC.
+
+Two rules worth knowing:
+
+- **29 February is observed on the 28th in non-leap years.** That keeps the
+  anniversary inside the right month, and the century rules are handled (2100 is
+  not a leap year; 2000 was).
+- **Day counts are computed at UTC midnight.** A daylight-saving change between
+  today and the anniversary would otherwise make a span 23 or 25 hours long and
+  round to the wrong number of days.
+
+`lib/anniversaries.test.ts` covers these plus year rollover (a January date is
+"soon" when viewed in December) and the reminder-window boundary.
+
+### Reminders are in-app, not push notifications
+
+`remind_days_before` drives highlighting: a date inside its window is outlined
+on the Dates screen and surfaced on Home. Family Hub does not send phone
+notifications. Real push would need Web Push with VAPID keys, a stored
+subscription per device, and a scheduled server job to fire them — a
+substantially bigger piece of work than this phase, and the UI says plainly that
+reminders appear in the app.
+
+## The Home dashboard
+
+Aggregates four sources in one round of parallel queries: today's events,
+not-done memos (with a total count, previewing the newest few), anniversaries
+inside the next 30 days, and the unchecked grocery count. Each section links to
+its tab, and sections with nothing in them are omitted rather than shown empty.
+
+It's server-rendered rather than four realtime subscriptions — it's a screen you
+glance at on opening, so `components/refresh-on-focus.tsx` re-fetches it when the
+app returns to the foreground (throttled), which costs far less than four live
+sockets.
+
 ## Project layout
 
 ```
 app/
   (app)/                     Signed-in screens, wrapped in the tab bar
-    page.tsx                 Home (greeting, counts, invite code)
+    page.tsx                 Home dashboard (today, dates, memos, groceries)
     memos/                   Memos board
     schedule/                Month + agenda calendar, .ics subscribe card
     groceries/               Live grocery list
+    anniversaries/           Recurring yearly dates
   api/calendar/[token]/      Public read-only .ics feed
   onboarding/                Create-or-join-a-family screen + server actions
   login/page.tsx             Magic-link sign-in (with code fallback)
@@ -147,10 +187,12 @@ app/
   globals.css                Design tokens (light + dark)
 components/
   bottom-nav.tsx             Tab bar
+  refresh-on-focus.tsx       Refreshes the dashboard on return to foreground
   invite-code.tsx            Invite code with tap-to-copy
   live-badge.tsx             Realtime connection indicator
   service-worker-registrar.tsx
 lib/
+  anniversaries.ts           Recurring-date maths (unit-tested)
   calendar.ts                Month grid, day grouping (unit-tested)
   env.ts                     Reads env vars with helpful errors
   family.ts                  Current member + family lookup

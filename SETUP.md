@@ -55,10 +55,10 @@ This one script sets up all six tables plus the **Row-Level Security** rules
 that make the database itself refuse to hand over another family's rows, even if
 the app has a bug. Safe to re-run any time.
 
-> **Already set this up before? Re-run the script now.** It has changed twice:
-> once to make live updates work between phones, and once to add the calendar
-> subscription feed. Without the re-run, clearing bought items won't propagate,
-> and the Schedule screen's "Export to calendar" will fail.
+> **Already set this up before?** Re-run the script if you last ran it before
+> the Schedule phase — it changed to make live updates work between phones and
+> to add the calendar subscription feed. Nothing new is needed for the Dates
+> and Home dashboard phase.
 
 ## Step 4 — Set up the sign-in email
 
@@ -222,6 +222,9 @@ link (see the note in Step 6).
 | Signed in on Safari but home-screen app is not   | Expected on iOS. Open the installed app and use the 6-digit code instead.      |
 | Code rejected as invalid                         | Codes expire after an hour. Request a fresh one.                              |
 | Stuck on "Set up your family"                    | Step 3 — `create_family` comes from the schema script.                        |
+| A date isn't on Home yet                         | Home shows the next 30 days only. The Dates tab lists everything.              |
+| Expecting a notification for an anniversary      | Reminders are shown in the app (outlined on Dates, listed on Home), not pushed to your phone. |
+| Home looks out of date                           | It refreshes when you reopen the app, or switch tabs and back.                 |
 | Memos/Groceries show a red **Not live** dot      | The realtime socket isn't connected — see *Live updates* below.               |
 | Changes appear only after a refresh              | Same as above.                                                               |
 | Cleared items reappear on the other phone        | Step 3 — re-run the schema script (it sets `REPLICA IDENTITY FULL`).           |

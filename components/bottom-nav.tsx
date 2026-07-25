@@ -7,7 +7,8 @@ const TABS = [
   { href: "/", label: "Home", icon: HomeIcon },
   { href: "/memos", label: "Memos", icon: MemoIcon },
   { href: "/schedule", label: "Schedule", icon: CalendarIcon },
-  { href: "/groceries", label: "Groceries", icon: CartIcon },
+  { href: "/groceries", label: "Shop", icon: CartIcon },
+  { href: "/anniversaries", label: "Dates", icon: HeartIcon },
 ];
 
 export function BottomNav() {
@@ -114,6 +115,21 @@ function CalendarIcon({ filled }: { filled: boolean }) {
         stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 20s-7-4.6-7-9.3A4.2 4.2 0 0 1 12 8a4.2 4.2 0 0 1 7 2.7C19 15.4 12 20 12 20z"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
