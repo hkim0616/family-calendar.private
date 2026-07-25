@@ -18,8 +18,8 @@ app.
 
 | Phase  | Scope                                                      | Status      |
 | ------ | ---------------------------------------------------------- | ----------- |
-| **P0** | Foundation: PWA shell, sign-in, database schema + security | ✅ Done     |
-| **P1** | Families & members: create a family, invite, join          | Not started |
+| **P0** | PWA shell, magic-link sign-in, schema + security, create-a-family, home screen | ✅ Done |
+| **P1** | Members: invite others, join by code, manage the roster     | Not started |
 | **P2** | Memos & grocery list, both updating live                   | Not started |
 | **P3** | Schedule (month + agenda) & anniversary reminders          | Not started |
 | **P4** | Home dashboard & final PWA polish                          | Not started |
@@ -75,10 +75,11 @@ appear on other phones without a refresh.
 
 ```
 app/
-  page.tsx                   Home screen
-  login/page.tsx             Email + 6-digit code sign-in
+  page.tsx                   Home screen (greeting + family name)
+  onboarding/                "Create your family" screen + server action
+  login/page.tsx             Magic-link sign-in (with code fallback)
   offline/page.tsx           Shown when the phone has no connection
-  auth/callback/route.ts     Handles the email link as a fallback
+  auth/callback/route.ts     Verifies the link from the sign-in email
   auth/signout/route.ts      Sign out
   layout.tsx                 Root layout, PWA metadata
   globals.css                Design tokens (light + dark)
@@ -110,9 +111,17 @@ supabase/
 
 ## Notes
 
-- **Sign-in uses an emailed 6-digit code, not a magic link.** On iOS, a link in
-  Mail opens Safari and lands the user outside the installed app; a code keeps
-  them in it. The email link still works as a fallback.
+- **Sign-in is a magic link, with a 6-digit code as a second option in the same
+  email.** The link is verified server-side at `/auth/callback` from a
+  `token_hash`, rather than via the PKCE `?code=` flow, so it works no matter
+  which browser opens it — tapping a link in the iOS Mail app doesn't reliably
+  return to the browser that requested it. The code exists because on iOS a link
+  always opens Safari, leaving the installed home-screen app still signed out.
+- **First login routes through `/onboarding`.** `app/page.tsx` redirects there
+  when the signed-in user has no `members` row yet. Creating the family goes
+  through the `create_family()` database function so the `families` and `members`
+  rows can't half-succeed, and so no RLS policy has to permit inserting yourself
+  into an arbitrary family.
 - **The service worker doesn't cache pages or data** — only static assets and an
   offline notice. Cached HTML is how PWAs end up showing stale lists or the
   wrong person's signed-in screen.
