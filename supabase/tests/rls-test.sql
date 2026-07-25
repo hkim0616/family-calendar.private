@@ -188,6 +188,10 @@ select pg_temp.check('grocery_items published to realtime',
   (select count(*) from pg_publication_tables
    where pubname = 'supabase_realtime' and schemaname = 'public'
      and tablename = 'grocery_items'), 1);
+select pg_temp.check('events published to realtime',
+  (select count(*) from pg_publication_tables
+   where pubname = 'supabase_realtime' and schemaname = 'public'
+     and tablename = 'events'), 1);
 
 -- Without REPLICA IDENTITY FULL ('f'), a DELETE only reports the primary key,
 -- so subscribers filtering on family_id never receive it and deletions stop
@@ -198,6 +202,72 @@ select pg_temp.check('memos replica identity is FULL',
 select pg_temp.check('grocery_items replica identity is FULL',
   (select count(*) from pg_class
    where oid = 'public.grocery_items'::regclass and relreplident = 'f'), 1);
+select pg_temp.check('events replica identity is FULL',
+  (select count(*) from pg_class
+   where oid = 'public.events'::regclass and relreplident = 'f'), 1);
+
+\echo ''
+\echo '── calendar subscription feed ─────────────────────────────────────────'
+-- Each family gets its own unguessable token.
+select pg_temp.check('every family has a distinct calendar token',
+  (select count(distinct calendar_token) from public.families), 2);
+
+select calendar_token from public.families where name = 'Alice Family' \gset alice_
+select calendar_token from public.families where name = 'Bob Family'   \gset bob_
+
+-- The feed is reachable by `anon`, since a subscribing calendar cannot log in.
+set role anon;
+set request.jwt.claim.sub = '';
+
+select pg_temp.check('feed returns only the token owner''s events',
+  (select count(*) from public.calendar_feed(:'alice_calendar_token')
+   where event_id is not null), 1);
+select pg_temp.check('feed names the right family',
+  (select count(*) from public.calendar_feed(:'alice_calendar_token')
+   where family_name = 'Alice Family'), 1);
+select pg_temp.check('Bob''s token never exposes Alice''s events',
+  (select count(*) from public.calendar_feed(:'bob_calendar_token')
+   where title = 'Alice event'), 0);
+select pg_temp.check('an unknown token returns nothing at all',
+  (select count(*) from public.calendar_feed(
+     '00000000-0000-0000-0000-000000000000'::uuid)), 0);
+
+-- The feed is the ONLY thing anon may reach; the tables stay shut.
+do $$
+declare n int;
+begin
+  select count(*) into n from public.events;
+  if n = 0 then
+    raise notice 'PASS  anon still cannot read the events table directly';
+  else
+    raise warning 'FAIL  anon read % event rows directly', n;
+  end if;
+exception when insufficient_privilege then
+  raise notice 'PASS  anon still cannot read the events table directly';
+end;
+$$;
+
+-- A signed-out visitor must not be able to rotate anyone's token.
+do $$
+begin
+  perform public.reset_calendar_token();
+  raise warning 'FAIL  anon was allowed to reset a calendar token';
+exception when others then
+  raise notice 'PASS  anon cannot reset a calendar token';
+end;
+$$;
+
+-- Rotating invalidates the old link.
+reset role; set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+select public.reset_calendar_token() as rotated \gset
+reset role; set role anon;
+set request.jwt.claim.sub = '';
+select pg_temp.check('the old calendar link stops working after a reset',
+  (select count(*) from public.calendar_feed(:'alice_calendar_token')), 0);
+select pg_temp.check('the new calendar link works',
+  (select count(*) from public.calendar_feed(:'rotated')
+   where family_name = 'Alice Family'), 1);
 
 reset role;
 \echo ''

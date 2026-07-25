@@ -55,10 +55,10 @@ This one script sets up all six tables plus the **Row-Level Security** rules
 that make the database itself refuse to hand over another family's rows, even if
 the app has a bug. Safe to re-run any time.
 
-> **Already set this up before?** Re-run the script now — it changed to enable
-> live updates between phones. Without the re-run, checking an item off on one
-> phone will show up on the other, but *deleting* (clearing bought items) won't
-> until the other phone refreshes.
+> **Already set this up before? Re-run the script now.** It has changed twice:
+> once to make live updates work between phones, and once to add the calendar
+> subscription feed. Without the re-run, clearing bought items won't propagate,
+> and the Schedule screen's "Export to calendar" will fail.
 
 ## Step 4 — Set up the sign-in email
 
@@ -225,6 +225,44 @@ link (see the note in Step 6).
 | Memos/Groceries show a red **Not live** dot      | The realtime socket isn't connected — see *Live updates* below.               |
 | Changes appear only after a refresh              | Same as above.                                                               |
 | Cleared items reappear on the other phone        | Step 3 — re-run the schema script (it sets `REPLICA IDENTITY FULL`).           |
+| "Export to calendar" errors, or the link 404s     | Step 3 — re-run the schema script; the feed needs `calendar_token`.            |
+| iPhone won't subscribe to the calendar link       | Use the `https://…` link, not `webcal://`, when pasting manually. Check the URL ends in `.ics`. |
+| Subscribed calendar is missing recent events      | Normal — iOS refreshes on its own schedule. See *Subscribing to the calendar*.  |
+
+---
+
+## Subscribing to the calendar on an iPhone
+
+On the **Schedule** tab, scroll to **Export to calendar**.
+
+**On the phone you're holding:**
+
+1. Tap **Subscribe on this device**.
+2. iOS shows a "Subscribe to Calendar" sheet — tap **Subscribe**, then **Done**.
+3. The events appear in the built-in Calendar app and refresh on their own.
+
+**For someone else's phone (e.g. your partner's):**
+
+1. Tap **Copy link for another device**.
+2. Send them the link.
+3. On their iPhone: **Settings → Calendar → Accounts → Add Account → Other →
+   Add Subscribed Calendar**, paste the link, tap **Next**, then **Save**.
+   (Tapping the link in Safari also works and is quicker.)
+
+**On Google Calendar:** *Other calendars → + → From URL*, paste the link.
+
+### Two things worth knowing
+
+- **Treat the link like a password.** Anyone who has it can read your family's
+  calendar. That's unavoidable for calendar subscriptions — the calendar app
+  can't log in, so the link itself is the key. It's read-only and exposes
+  nothing but events: no memos, no groceries, no way to change anything.
+  If a link gets out, tap **Create a new link** to revoke it.
+- **iOS decides how often to refresh**, typically every few hours — not
+  instantly. Inside Family Hub itself changes appear immediately; it's only the
+  subscribed copy in Apple's Calendar that lags. You can force it in Calendar
+  with a pull-to-refresh, or set **Settings → Calendar → Accounts →
+  Subscribed Calendars → Fetch New Data**.
 
 ---
 

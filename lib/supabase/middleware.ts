@@ -3,8 +3,13 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
 
-/** Pages reachable without being signed in. */
-const PUBLIC_PATHS = ["/login", "/auth", "/offline"];
+/**
+ * Reachable without being signed in.
+ *
+ * /api/calendar must stay open: a subscribing calendar app fetches it with no
+ * cookies. Its own random token is what authorises the request.
+ */
+const PUBLIC_PATHS = ["/login", "/auth", "/offline", "/api/calendar"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(

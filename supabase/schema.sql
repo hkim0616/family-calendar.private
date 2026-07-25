@@ -37,6 +37,19 @@ create table if not exists public.families (
   created_at  timestamptz not null default now()
 );
 
+-- Secret used by the read-only .ics calendar feed.
+--
+-- Calendar subscriptions can't log in — Apple's servers fetch the URL with no
+-- cookies — so the URL itself has to carry the credential. This is a random
+-- 122-bit value, not guessable, and can be reset from the app if a link leaks.
+-- Separate from invite_code on purpose: one grants read-only calendar access,
+-- the other grants full membership.
+alter table public.families
+  add column if not exists calendar_token uuid not null default gen_random_uuid();
+
+create unique index if not exists families_calendar_token_idx
+  on public.families (calendar_token);
+
 -- A person in a family, linked to their login (auth.users).
 create table if not exists public.members (
   id           uuid primary key default gen_random_uuid(),
@@ -324,6 +337,19 @@ begin
 end
 $$;
 
+-- Events too, so a new entry shows up on the other phone without a refresh.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public' and tablename = 'events'
+  ) then
+    alter publication supabase_realtime add table public.events;
+  end if;
+end
+$$;
+
 -- By default Postgres only reports the primary key of a DELETEd row. That
 -- breaks two things at once for live updates:
 --
@@ -337,3 +363,78 @@ $$;
 -- slightly larger write-ahead logs, which is irrelevant at family scale.
 alter table public.memos         replica identity full;
 alter table public.grocery_items replica identity full;
+alter table public.events        replica identity full;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- CALENDAR SUBSCRIPTION FEED
+--
+-- Read-only access to one family's events, authorised by the family's
+-- calendar_token instead of a login session, because a subscribing calendar app
+-- cannot log in.
+--
+-- SECURITY DEFINER (like create_family / join_family) is what lets this work
+-- without ever introducing the Supabase service-role key: the function is a
+-- narrow, read-only window keyed on an unguessable token, rather than a key
+-- that bypasses RLS everywhere.
+-- ═══════════════════════════════════════════════════════════════════════════
+create or replace function public.calendar_feed(token uuid)
+returns table (
+  family_name text,
+  event_id    uuid,
+  title       text,
+  starts_at   timestamptz,
+  ends_at     timestamptz,
+  all_day     boolean,
+  note        text,
+  updated_at  timestamptz
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  -- LEFT JOIN so a family with no events still yields its name, letting the
+  -- endpoint tell "wrong token" apart from "empty calendar".
+  select f.name, e.id, e.title, e.starts_at, e.ends_at, e.all_day, e.note, e.updated_at
+  from public.families f
+  left join public.events e on e.family_id = f.id
+  where f.calendar_token = token
+  order by e.starts_at
+  limit 5000;
+$$;
+
+-- Deliberately granted to `anon`: the calendar app fetching the feed is not
+-- signed in. The token in the URL is the entire authorisation.
+revoke all on function public.calendar_feed(uuid) from public;
+grant execute on function public.calendar_feed(uuid) to anon, authenticated;
+
+-- Rotate the token, invalidating any subscription link that has leaked.
+create or replace function public.reset_calendar_token()
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_token uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in';
+  end if;
+
+  update public.families
+  set calendar_token = gen_random_uuid()
+  where id in (select public.my_family_ids())
+  returning calendar_token into new_token;
+
+  if new_token is null then
+    raise exception 'You are not a member of any family';
+  end if;
+
+  return new_token;
+end;
+$$;
+
+revoke all on function public.reset_calendar_token() from public;
+grant execute on function public.reset_calendar_token() to authenticated;

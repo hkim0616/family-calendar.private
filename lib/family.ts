@@ -7,6 +7,8 @@ export type CurrentMember = {
   familyId: string;
   familyName: string;
   inviteCode: string;
+  /** Secret for the read-only .ics feed. Never render this outside the app. */
+  calendarToken: string;
 };
 
 /**
@@ -21,7 +23,7 @@ export async function getCurrentMember(): Promise<CurrentMember | null> {
 
   const { data, error } = await supabase
     .from("members")
-    .select("id, name, role, family_id, families ( name, invite_code )")
+    .select("id, name, role, family_id, families ( name, invite_code, calendar_token )")
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -41,5 +43,6 @@ export async function getCurrentMember(): Promise<CurrentMember | null> {
     familyId: data.family_id,
     familyName: family?.name ?? "Your family",
     inviteCode: family?.invite_code ?? "—",
+    calendarToken: family?.calendar_token ?? "",
   };
 }

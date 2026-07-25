@@ -1,5 +1,9 @@
 {
   "compilerOptions": {
+    // Needed to iterate Maps and Sets directly (the calendar groups events in a
+    // Map). Next transpiles for the browser separately, so this only affects
+    // what the type checker allows.
+    "target": "ES2022",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,

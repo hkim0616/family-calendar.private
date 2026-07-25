@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/", label: "Home", icon: HomeIcon },
   { href: "/memos", label: "Memos", icon: MemoIcon },
+  { href: "/schedule", label: "Schedule", icon: CalendarIcon },
   { href: "/groceries", label: "Groceries", icon: CartIcon },
 ];
 
@@ -83,6 +84,34 @@ function MemoIcon({ filled }: { filled: boolean }) {
       <path
         d="M8 8h8M8 12h8M8 16h5"
         stroke={filled ? "var(--surface)" : "currentColor"}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function CalendarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+      <rect
+        x="3.5"
+        y="5"
+        width="17"
+        height="16"
+        rx="2.5"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M3.5 10h17"
+        stroke={filled ? "var(--surface)" : "currentColor"}
+        strokeWidth="1.8"
+      />
+      <path
+        d="M8 3v3.5M16 3v3.5"
+        stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
       />
