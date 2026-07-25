@@ -19,9 +19,9 @@ app.
 | Phase  | Scope                                                      | Status      |
 | ------ | ---------------------------------------------------------- | ----------- |
 | **P0** | PWA shell, magic-link sign-in, schema + security, create-a-family, home screen | ✅ Done |
-| **P1** | Members: invite others, join by code, manage the roster     | Not started |
-| **P2** | Memos & grocery list, both updating live                   | Not started |
-| **P3** | Schedule (month + agenda) & anniversary reminders          | Not started |
+| **P1** | Memos board + live grocery list, join-a-family by invite code | ✅ Done   |
+| **P2** | Schedule (month + agenda views)                            | Not started |
+| **P3** | Anniversaries with lead-time reminders                     | Not started |
 | **P4** | Home dashboard & final PWA polish                          | Not started |
 
 ## How the data is protected
@@ -68,15 +68,33 @@ All content tables carry a `family_id`.
 | `grocery_items` | Shopping list, with a checked flag          |
 | `anniversaries` | Yearly dates with a reminder lead time      |
 
+### Live updates
+
 `memos` and `grocery_items` are published to Supabase Realtime, so changes
-appear on other phones without a refresh.
+appear on other phones without a refresh. Two details make that actually work:
+
+- **`REPLICA IDENTITY FULL`** on both tables. By default Postgres reports only
+  the primary key of a deleted row, so a subscriber filtering on `family_id`
+  would never receive deletions — "clear bought items" would appear to do
+  nothing on the other phone until a refresh.
+- **`realtime.setAuth()` before subscribing** (`lib/use-realtime-list.ts`).
+  Without the user's token the socket connects anonymously, RLS correctly
+  filters out every row, and the stream looks silently dead.
+
+Screens fetch their first page server-side for a fast paint, then
+`useRealtimeList` takes over. Writes are optimistic and roll back on error; the
+merge is keyed by row id so our own write and its realtime echo can't produce a
+duplicate.
 
 ## Project layout
 
 ```
 app/
-  page.tsx                   Home screen (greeting + family name)
-  onboarding/                "Create your family" screen + server action
+  (app)/                     Signed-in screens, wrapped in the tab bar
+    page.tsx                 Home (greeting, counts, invite code)
+    memos/                   Memos board
+    groceries/               Live grocery list
+  onboarding/                Create-or-join-a-family screen + server actions
   login/page.tsx             Magic-link sign-in (with code fallback)
   offline/page.tsx           Shown when the phone has no connection
   auth/callback/route.ts     Verifies the link from the sign-in email
@@ -84,10 +102,17 @@ app/
   layout.tsx                 Root layout, PWA metadata
   globals.css                Design tokens (light + dark)
 components/
+  bottom-nav.tsx             Tab bar
+  invite-code.tsx            Invite code with tap-to-copy
+  live-badge.tsx             Realtime connection indicator
   service-worker-registrar.tsx
 lib/
   env.ts                     Reads env vars with helpful errors
-  supabase/client.ts         Browser client
+  family.ts                  Current member + family lookup
+  realtime-merge.ts          Pure list-merge helpers (unit-tested)
+  time.ts                    Short timestamps for list rows
+  use-realtime-list.ts       Realtime subscription hook
+  supabase/client.ts         Browser client (cached singleton)
   supabase/server.ts         Server client (respects RLS)
   supabase/middleware.ts     Session refresh + route protection
 middleware.ts                Runs the above on every request
@@ -102,12 +127,13 @@ supabase/
 
 ## Scripts
 
-| Command         | Description                |
-| --------------- | -------------------------- |
-| `npm run dev`   | Dev server on port 3000    |
-| `npm run build` | Production build           |
-| `npm run start` | Serve the production build |
-| `npm run lint`  | ESLint                     |
+| Command         | Description                            |
+| --------------- | -------------------------------------- |
+| `npm run dev`   | Dev server on port 3000                |
+| `npm run build` | Production build                       |
+| `npm run start` | Serve the production build             |
+| `npm run lint`  | ESLint                                 |
+| `npm test`      | Unit tests for the realtime list merge |
 
 ## Notes
 

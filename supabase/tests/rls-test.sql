@@ -175,6 +175,30 @@ exception when insufficient_privilege then
 end;
 $$;
 
+-- Back to the owner: these inspect catalogs, not family data.
+reset role;
+
+\echo ''
+\echo '── realtime plumbing (needed for live updates between phones) ─────────'
+select pg_temp.check('memos published to realtime',
+  (select count(*) from pg_publication_tables
+   where pubname = 'supabase_realtime' and schemaname = 'public'
+     and tablename = 'memos'), 1);
+select pg_temp.check('grocery_items published to realtime',
+  (select count(*) from pg_publication_tables
+   where pubname = 'supabase_realtime' and schemaname = 'public'
+     and tablename = 'grocery_items'), 1);
+
+-- Without REPLICA IDENTITY FULL ('f'), a DELETE only reports the primary key,
+-- so subscribers filtering on family_id never receive it and deletions stop
+-- propagating between devices.
+select pg_temp.check('memos replica identity is FULL',
+  (select count(*) from pg_class
+   where oid = 'public.memos'::regclass and relreplident = 'f'), 1);
+select pg_temp.check('grocery_items replica identity is FULL',
+  (select count(*) from pg_class
+   where oid = 'public.grocery_items'::regclass and relreplident = 'f'), 1);
+
 reset role;
 \echo ''
 \echo '── done. Any FAIL / WARNING above is a security bug. ──────────────────'

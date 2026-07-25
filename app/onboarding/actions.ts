@@ -42,3 +42,38 @@ export async function createFamilyAction(
   revalidatePath("/");
   redirect("/");
 }
+
+/**
+ * Joins an existing family using its invite code. Like create_family, the write
+ * goes through a vetted database function — there is deliberately no RLS policy
+ * that would let someone insert themselves into an arbitrary family.
+ */
+export async function joinFamilyAction(
+  _prev: CreateFamilyState,
+  formData: FormData,
+): Promise<CreateFamilyState> {
+  const code = String(formData.get("inviteCode") ?? "")
+    .trim()
+    .toUpperCase();
+  const displayName = String(formData.get("displayName") ?? "").trim();
+
+  if (!code) return { error: "Please enter the invite code." };
+  if (!displayName) return { error: "Please enter your own name." };
+
+  const supabase = createSupabaseServerClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.rpc("join_family", {
+    code,
+    display_name: displayName,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/");
+  redirect("/");
+}

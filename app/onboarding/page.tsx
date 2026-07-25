@@ -6,7 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { CreateFamilyForm } from "./create-family-form";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Create your family — Family Hub" };
+export const metadata = { title: "Set up your family — Family Hub" };
 
 /** "hyun.kim@gmail.com" → "Hyun Kim", as a starting suggestion only. */
 function guessNameFromEmail(email: string | undefined): string {
@@ -35,11 +35,11 @@ export default async function OnboardingPage() {
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-5 py-10">
       <div className="mb-6 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">
-          Create your family
+          Set up your family
         </h1>
         <p className="muted mt-2 text-sm">
-          One last step. Everything in Family Hub is shared inside your family
-          and visible to nobody else.
+          Start a new family, or join one someone already made. Everything in
+          Family Hub is shared inside your family and visible to nobody else.
         </p>
       </div>
 

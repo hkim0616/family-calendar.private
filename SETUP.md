@@ -55,6 +55,11 @@ This one script sets up all six tables plus the **Row-Level Security** rules
 that make the database itself refuse to hand over another family's rows, even if
 the app has a bug. Safe to re-run any time.
 
+> **Already set this up before?** Re-run the script now — it changed to enable
+> live updates between phones. Without the re-run, checking an item off on one
+> phone will show up on the other, but *deleting* (clearing bought items) won't
+> until the other phone refreshes.
+
 ## Step 4 — Set up the sign-in email
 
 Family Hub signs you in with a link emailed to you — no password. Supabase sends
@@ -216,4 +221,30 @@ link (see the note in Step 6).
 | "requested path is invalid" after tapping        | Step 6 — add your URL under **Redirect URLs**.                                 |
 | Signed in on Safari but home-screen app is not   | Expected on iOS. Open the installed app and use the 6-digit code instead.      |
 | Code rejected as invalid                         | Codes expire after an hour. Request a fresh one.                              |
-| Stuck on "Create your family"                    | Step 3 — `create_family` comes from the schema script.                        |
+| Stuck on "Set up your family"                    | Step 3 — `create_family` comes from the schema script.                        |
+| Memos/Groceries show a red **Not live** dot      | The realtime socket isn't connected — see *Live updates* below.               |
+| Changes appear only after a refresh              | Same as above.                                                               |
+| Cleared items reappear on the other phone        | Step 3 — re-run the schema script (it sets `REPLICA IDENTITY FULL`).           |
+
+---
+
+## Live updates
+
+The Memos and Groceries screens show a small dot in the top-right:
+
+| Dot                | Meaning                                                     |
+| ------------------ | ----------------------------------------------------------- |
+| green **Live**     | Connected — changes from other phones arrive instantly.     |
+| grey **Connecting…** | Still opening the connection. Normal for a second or two.  |
+| red **Not live**    | Not connected. The screen still works, but you'll need to refresh to see others' changes. |
+
+If it stays red:
+
+1. **Check Realtime is on for the tables.** In Supabase go to **Database** →
+   **Replication** (or **Publications**) → `supabase_realtime`, and make sure
+   `memos` and `grocery_items` are enabled. The schema script does this, but the
+   dashboard is where to confirm it.
+2. **Re-run `supabase/schema.sql`** (Step 3) if you set the project up before
+   this phase.
+3. **Check the connection.** Realtime uses a websocket; some corporate or hotel
+   Wi-Fi blocks them. Try mobile data.

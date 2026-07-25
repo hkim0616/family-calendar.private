@@ -323,3 +323,17 @@ begin
   end if;
 end
 $$;
+
+-- By default Postgres only reports the primary key of a DELETEd row. That
+-- breaks two things at once for live updates:
+--
+--   1. Subscribers filter on family_id, and a delete event carrying only `id`
+--      has no family_id to match — so deletions would silently never reach
+--      other phones ("clear bought items" would appear to do nothing until
+--      someone refreshed).
+--   2. RLS can't be evaluated on a row it can't see the family_id of.
+--
+-- REPLICA IDENTITY FULL includes the whole old row, fixing both. The cost is
+-- slightly larger write-ahead logs, which is irrelevant at family scale.
+alter table public.memos         replica identity full;
+alter table public.grocery_items replica identity full;
