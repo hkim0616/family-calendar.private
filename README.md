@@ -22,6 +22,7 @@ app.
 | **P1** | Memos board + live grocery list, join-a-family by invite code | ✅ Done   |
 | **P2** | Schedule (month + agenda) + .ics subscription feed          | ✅ Done     |
 | **P3** | Anniversaries + aggregated Home dashboard                   | ✅ Done     |
+| **P4** | Web push notifications with a nightly scheduler             | ✅ Done     |
 
 ## How the data is protected
 
@@ -146,14 +147,11 @@ Two rules worth knowing:
 `lib/anniversaries.test.ts` covers these plus year rollover (a January date is
 "soon" when viewed in December) and the reminder-window boundary.
 
-### Reminders are in-app, not push notifications
+### Reminders appear both in-app and as push notifications
 
-`remind_days_before` drives highlighting: a date inside its window is outlined
-on the Dates screen and surfaced on Home. Family Hub does not send phone
-notifications. Real push would need Web Push with VAPID keys, a stored
-subscription per device, and a scheduled server job to fire them — a
-substantially bigger piece of work than this phase, and the UI says plainly that
-reminders appear in the app.
+`remind_days_before` drives both: a date inside its window is outlined on the
+Dates screen and surfaced on Home, and it also triggers a push notification. See
+*Push notifications* below.
 
 ## The Home dashboard
 
@@ -167,6 +165,57 @@ glance at on opening, so `components/refresh-on-focus.tsx` re-fetches it when th
 app returns to the foreground (throttled), which costs far less than four live
 sockets.
 
+## Push notifications
+
+Three moving parts:
+
+1. **Subscribing.** `components/notification-settings.tsx` asks for permission
+   and registers the device, then `POST /api/push/subscribe` stores the endpoint
+   and keys. That route runs as the signed-in user, so RLS keeps each member's
+   device endpoints to themselves — an endpoint is a capability URL, and anyone
+   holding it can push to that phone.
+2. **Deciding.** `lib/push/plan.ts` turns a family's data plus today's date into
+   a list of notifications. Pure and unit-tested.
+3. **Sending.** `pg_cron` in Supabase POSTs to `/api/push/run` once a day with a
+   shared secret; that route plans, then sends with `web-push`.
+
+### Why a shared secret rather than a service-role key
+
+The scheduler has no login session, so it can't rely on RLS. Rather than
+introduce Supabase's service-role key — which would bypass RLS everywhere and
+undo the guarantee established in P0 — the `push_*` database functions are
+SECURITY DEFINER and each verifies a shared secret before returning anything.
+The secret lives in `app_config` and in the cron command; comparison is done on
+SHA-256 digests so it doesn't leak through timing. Same shape as the calendar
+feed: a narrow, purpose-built window guarded by a high-entropy secret.
+
+### Sending exactly once
+
+`push_sends` holds a unique `dedupe_key` per notification per occurrence. The
+scheduler **claims** a key, **sends**, and **releases** the claim only if nothing
+was delivered — so a notification goes out at most once, and a run where the push
+service was unreachable is retried tomorrow instead of being silently lost.
+
+Anniversary keys embed the occurrence date (`ann:<id>:2026-05-05:lead`), which is
+what makes the reminder fire again next year rather than being permanently
+silenced. A test walks 365 consecutive days and asserts one anniversary produces
+exactly two notifications in a year — the guard against a 30-day reminder nagging
+every morning for a month.
+
+Subscriptions that return 404 or 410 are deleted, so an uninstalled app isn't
+pushed at forever.
+
+### iOS constraints
+
+- Web push needs **iOS 16.4+**.
+- It only works in an app **added to the Home Screen**. In a Safari tab
+  `PushManager` doesn't exist, so the settings card detects that and gives
+  install instructions rather than showing a button that cannot work.
+- Silent push is refused, so every push must show a notification. The service
+  worker's payload handling is deliberately failure-tolerant — an empty or
+  malformed push still shows something, because a `push` handler that throws can
+  cost the app its permission. `lib/push/sw-payload.test.ts` covers that.
+
 ## Project layout
 
 ```
@@ -178,6 +227,8 @@ app/
     groceries/               Live grocery list
     anniversaries/           Recurring yearly dates
   api/calendar/[token]/      Public read-only .ics feed
+  api/push/subscribe/        Stores a device's push subscription
+  api/push/run/              Nightly scheduler target
   onboarding/                Create-or-join-a-family screen + server actions
   login/page.tsx             Magic-link sign-in (with code fallback)
   offline/page.tsx           Shown when the phone has no connection
@@ -187,6 +238,7 @@ app/
   globals.css                Design tokens (light + dark)
 components/
   bottom-nav.tsx             Tab bar
+  notification-settings.tsx  "Turn on reminders" + iOS install guidance
   refresh-on-focus.tsx       Refreshes the dashboard on return to foreground
   invite-code.tsx            Invite code with tap-to-copy
   live-badge.tsx             Realtime connection indicator
@@ -197,6 +249,7 @@ lib/
   env.ts                     Reads env vars with helpful errors
   family.ts                  Current member + family lookup
   ics.ts                     iCalendar feed builder (unit-tested)
+  push/plan.ts               Decides which reminders are due (unit-tested)
   realtime-merge.ts          Pure list-merge helpers (unit-tested)
   time.ts                    Short timestamps for list rows
   use-realtime-list.ts       Realtime subscription hook
@@ -208,6 +261,8 @@ public/
   manifest.webmanifest       Makes the app installable
   sw.js                      Service worker
   icons/                     App icons
+scripts/
+  generate-vapid-keys.mjs    One-off push keypair generator
 supabase/
   schema.sql                 Tables, security policies, functions
   tests/rls-test.sql         Security regression test

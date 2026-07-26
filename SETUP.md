@@ -55,10 +55,9 @@ This one script sets up all six tables plus the **Row-Level Security** rules
 that make the database itself refuse to hand over another family's rows, even if
 the app has a bug. Safe to re-run any time.
 
-> **Already set this up before?** Re-run the script if you last ran it before
-> the Schedule phase — it changed to make live updates work between phones and
-> to add the calendar subscription feed. Nothing new is needed for the Dates
-> and Home dashboard phase.
+> **Already set this up before? Re-run the script.** It has gained the calendar
+> subscription feed and, most recently, the tables that store which phones get
+> notifications. Re-running is always safe.
 
 ## Step 4 — Set up the sign-in email
 
@@ -223,7 +222,14 @@ link (see the note in Step 6).
 | Code rejected as invalid                         | Codes expire after an hour. Request a fresh one.                              |
 | Stuck on "Set up your family"                    | Step 3 — `create_family` comes from the schema script.                        |
 | A date isn't on Home yet                         | Home shows the next 30 days only. The Dates tab lists everything.              |
-| Expecting a notification for an anniversary      | Reminders are shown in the app (outlined on Dates, listed on Home), not pushed to your phone. |
+| No "Reminders" card on the Home screen           | Step 7b — the VAPID keys aren't in Vercel yet, or it needs a redeploy.          |
+| iPhone shows "add to Home Screen first"          | Step 7f — Apple only allows notifications for installed apps. Open it from the icon. |
+| "Turn on reminders" does nothing                 | You're on iOS below 16.4, or in a Safari tab rather than the installed app.     |
+| Notifications say "blocked"                      | iPhone **Settings → Notifications → Family Hub**, allow them, then reopen.      |
+| `curl` returns 401                               | The secret in the `curl` command doesn't match the one in `app_config` (7c–7e). |
+| `curl` returns `sent: 0, skipped: 2`             | Working as intended — already sent today. `delete from public.push_sends;` to re-test. |
+| Nothing arrives but `sent` is above 0            | The push reached Apple. Check the phone isn't in Do Not Disturb or Focus mode.  |
+| Reminders stopped after a while                  | If you regenerated the VAPID keys, every phone must tap "Turn on reminders" again. |
 | Home looks out of date                           | It refreshes when you reopen the app, or switch tabs and back.                 |
 | Memos/Groceries show a red **Not live** dot      | The realtime socket isn't connected — see *Live updates* below.               |
 | Changes appear only after a refresh              | Same as above.                                                               |
@@ -231,6 +237,165 @@ link (see the note in Step 6).
 | "Export to calendar" errors, or the link 404s     | Step 3 — re-run the schema script; the feed needs `calendar_token`.            |
 | iPhone won't subscribe to the calendar link       | Use the `https://…` link, not `webcal://`, when pasting manually. Check the URL ends in `.ics`. |
 | Subscribed calendar is missing recent events      | Normal — iOS refreshes on its own schedule. See *Subscribing to the calendar*.  |
+
+---
+
+## Step 7 — Turn on notifications (optional)
+
+Skip this and everything else still works; the app just won't buzz your phone.
+Budget about 15 minutes.
+
+### 7a. Generate the VAPID keys
+
+"VAPID" is the keypair that proves a notification really came from your app.
+Apple and Google both refuse push without it.
+
+On your computer, in the project folder:
+
+```bash
+node scripts/generate-vapid-keys.mjs
+```
+
+It prints two long strings and writes nothing to disk — that's deliberate, the
+private key must never end up in the repo.
+
+> Run this **once**. If you generate new keys later, every phone's subscription
+> stops working and everyone has to tap "Turn on reminders" again.
+
+### 7b. Put the keys in Vercel
+
+**Project Settings → Environment Variables**, add three:
+
+| Name                          | Value                                            |
+| ----------------------------- | ------------------------------------------------ |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY`| the public key from the script                   |
+| `VAPID_PRIVATE_KEY`           | the private key from the script — **secret**     |
+| `VAPID_SUBJECT`               | `mailto:your@email.com`                          |
+
+Then **Deployments → ⋯ → Redeploy**. The "Reminders" card only appears on the
+Home screen once these exist.
+
+> `VAPID_SUBJECT` is just a contact address, so a push service can reach you if
+> your notifications start misbehaving. Any email of yours is fine.
+
+### 7c. Make a scheduler secret
+
+The nightly job needs a password to prove it's really your scheduler. Generate
+one:
+
+```bash
+openssl rand -hex 32
+```
+
+Copy the result. It goes in **two** places, both below. Nothing else needs it —
+in particular it does *not* go in Vercel.
+
+### 7d. Tell the database the secret
+
+Supabase → **SQL Editor** → **New query**. Paste this, replacing
+`PASTE_YOUR_SECRET_HERE`:
+
+```sql
+insert into public.app_config (key, value)
+values ('push_cron_secret', 'PASTE_YOUR_SECRET_HERE')
+on conflict (key) do update set value = excluded.value;
+```
+
+Run it.
+
+### 7e. Schedule the nightly job
+
+Still in the SQL Editor. Replace **both** placeholders — your Vercel URL and the
+same secret — then run:
+
+```sql
+-- One-time: let Postgres run schedules and make outbound web requests.
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+-- Remove any previous version of this job before re-adding it.
+select cron.unschedule('family-hub-reminders')
+where exists (select 1 from cron.job where jobname = 'family-hub-reminders');
+
+select cron.schedule(
+  'family-hub-reminders',
+  -- Minute and hour, in UTC. '0 0 * * *' is midnight UTC = 9am in Seoul.
+  -- Pick the UTC hour that lands mid-morning where your family lives.
+  '0 0 * * *',
+  $$
+  select net.http_post(
+    url    := 'https://YOUR-APP.vercel.app/api/push/run',
+    headers := jsonb_build_object(
+      'Content-Type',  'application/json',
+      'Authorization', 'Bearer PASTE_YOUR_SECRET_HERE'
+    )
+  );
+  $$
+);
+```
+
+> **Choosing the hour.** Reminders are worked out in UTC, so pick the UTC hour
+> that is morning for you and leave it. Some conversions: Seoul 9am = `0`,
+> London 9am = `8` (`9` in winter), New York 9am = `13` (`14` in winter).
+
+To check the job exists: `select jobname, schedule from cron.job;`
+
+### 7f. ⚠️ Add the app to each Home Screen — required on iPhone
+
+**On an iPhone, web notifications only work for an app added to the Home
+Screen.** In a normal Safari tab, iOS doesn't offer them at all. This is Apple's
+rule, not something I can work around.
+
+So on **every** iPhone that wants reminders:
+
+1. Open your Vercel URL in **Safari**.
+2. **Share** → **Add to Home Screen** → **Add**.
+3. **Open Family Hub from the new icon** — not from Safari.
+4. On the Home screen, find **Reminders** → **Turn on reminders**.
+5. Tap **Allow** when iOS asks.
+
+It should then say *"Reminders are on for this device."* Repeat on the second
+phone — this is per-device, not per-person.
+
+You also need **iOS 16.4 or later**. If you open the app in a Safari tab
+instead, the card will tell you to install it first rather than showing a button
+that can't work.
+
+### 7g. Test it without waiting for tomorrow
+
+Trigger the job by hand from your computer, using your URL and secret:
+
+```bash
+curl -X POST https://YOUR-APP.vercel.app/api/push/run \
+  -H "Authorization: Bearer PASTE_YOUR_SECRET_HERE"
+```
+
+It replies with a summary like
+`{"ok":true,"families":1,"sent":2,"skipped":0,"failed":0,"pruned":0}`.
+
+- `sent` counts notifications that reached a device.
+- `skipped` means "already sent today" — that's the duplicate guard working.
+- If `sent` is 0 and `skipped` is 0, nothing was due. Add a grocery item, or a
+  date whose reminder lands today, and try again.
+
+**A notification only goes out once.** To re-test the same one, clear the record:
+
+```sql
+delete from public.push_sends;
+```
+
+---
+
+## What triggers a notification
+
+| Notification    | When                                                                 |
+| --------------- | -------------------------------------------------------------------- |
+| Anniversary     | Exactly on its "remind me X days before" day, and again on the day itself. |
+| Shopping list   | Once a day, only while something is unchecked.                        |
+
+Anniversaries fire **twice per year at most** — on the lead day and the day
+itself — rather than every morning of the window. Nothing fires when there's
+nothing to say.
 
 ---
 

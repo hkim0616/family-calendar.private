@@ -8,8 +8,17 @@ import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
  *
  * /api/calendar must stay open: a subscribing calendar app fetches it with no
  * cookies. Its own random token is what authorises the request.
+ *
+ * /api/push/run likewise: the scheduler has no session and authorises with a
+ * bearer secret that the database functions verify.
  */
-const PUBLIC_PATHS = ["/login", "/auth", "/offline", "/api/calendar"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/auth",
+  "/offline",
+  "/api/calendar",
+  "/api/push/run",
+];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(

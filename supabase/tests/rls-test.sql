@@ -269,6 +269,158 @@ select pg_temp.check('the new calendar link works',
   (select count(*) from public.calendar_feed(:'rotated')
    where family_name = 'Alice Family'), 1);
 
+\echo ''
+\echo '── push notifications ─────────────────────────────────────────────────'
+reset role;
+-- The scheduler secret normally comes from SETUP.md; use a fixed one here.
+insert into public.app_config (key, value)
+values ('push_cron_secret', 'test-secret-abc')
+on conflict (key) do update set value = excluded.value;
+
+select id from public.families where name = 'Alice Family' \gset alice_
+select id from public.members  where name = 'Alice'        \gset alicemember_
+select id from public.members  where name = 'Bob' and family_id = :'bob_family' \gset bobmember_
+
+-- Alice and Bob each register a device.
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+insert into public.push_subscriptions (family_id, member_id, endpoint, p256dh, auth)
+values (:'alice_id', :'alicemember_id', 'https://push.example/alice', 'k1', 'a1');
+
+select pg_temp.check('a member can register their own device',
+  (select count(*) from public.push_subscriptions), 1);
+
+-- Bob must not be able to see or touch Alice's device endpoint: whoever holds an
+-- endpoint can push to that phone.
+reset role; set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+select pg_temp.check('one member cannot see another member''s device',
+  (select count(*) from public.push_subscriptions
+   where endpoint = 'https://push.example/alice'), 0);
+
+with d as (delete from public.push_subscriptions
+           where endpoint = 'https://push.example/alice' returning 1)
+select pg_temp.check('one member cannot delete another member''s device',
+  (select count(*) from d), 0);
+
+-- Registering a device against someone else's member row must fail.
+do $$
+begin
+  insert into public.push_subscriptions (family_id, member_id, endpoint, p256dh, auth)
+  values (
+    (select id from public.families where name = 'Alice Family' limit 1),
+    (select id from public.members where name = 'Alice' limit 1),
+    'https://push.example/forged', 'k', 'a');
+  raise warning 'FAIL  a member could register a device for someone else';
+exception when insufficient_privilege or not_null_violation then
+  raise notice 'PASS  cannot register a device for another member';
+end;
+$$;
+
+-- The bookkeeping tables must be invisible to clients.
+do $$
+declare n int;
+begin
+  select count(*) into n from public.app_config;
+  if n = 0 then
+    raise notice 'PASS  app_config is not readable by clients';
+  else
+    raise warning 'FAIL  app_config leaked % rows to a client', n;
+  end if;
+exception when insufficient_privilege then
+  raise notice 'PASS  app_config is not readable by clients';
+end;
+$$;
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.push_sends;
+  if n = 0 then
+    raise notice 'PASS  push_sends is not readable by clients';
+  else
+    raise warning 'FAIL  push_sends leaked % rows to a client', n;
+  end if;
+exception when insufficient_privilege then
+  raise notice 'PASS  push_sends is not readable by clients';
+end;
+$$;
+
+-- ── the scheduler functions are gated on the shared secret ────────────────
+reset role; set role anon;
+set request.jwt.claim.sub = '';
+
+do $$
+begin
+  perform public.push_due('wrong-secret');
+  raise warning 'FAIL  push_due accepted a wrong secret';
+exception when others then
+  raise notice 'PASS  push_due rejects a wrong secret';
+end;
+$$;
+
+do $$
+begin
+  perform public.push_due(null);
+  raise warning 'FAIL  push_due accepted a null secret';
+exception when others then
+  raise notice 'PASS  push_due rejects a null secret';
+end;
+$$;
+
+do $$
+begin
+  perform public.push_claim('wrong-secret',
+    '00000000-0000-0000-0000-000000000000'::uuid, 'k');
+  raise warning 'FAIL  push_claim accepted a wrong secret';
+exception when others then
+  raise notice 'PASS  push_claim rejects a wrong secret';
+end;
+$$;
+
+do $$
+begin
+  perform public.push_forget('wrong-secret', 'https://push.example/alice');
+  raise warning 'FAIL  push_forget accepted a wrong secret';
+exception when others then
+  raise notice 'PASS  push_forget rejects a wrong secret';
+end;
+$$;
+
+-- With the right secret the scheduler gets exactly what it needs.
+select pg_temp.check('push_due returns families that have devices',
+  (select jsonb_array_length(public.push_due('test-secret-abc'))), 1);
+
+select pg_temp.check('push_due includes the device to push to',
+  (select jsonb_array_length(public.push_due('test-secret-abc') -> 0 -> 'subscriptions')), 1);
+
+select pg_temp.check('push_due counts the shopping list',
+  (select (public.push_due('test-secret-abc') -> 0 ->> 'grocery_to_buy')::int), 1);
+
+select pg_temp.check('push_due includes anniversaries',
+  (select jsonb_array_length(public.push_due('test-secret-abc') -> 0 -> 'anniversaries')), 1);
+
+-- Claiming is what makes a notification send once and only once.
+select pg_temp.check('the first claim of a key succeeds',
+  (select case when public.push_claim('test-secret-abc', :'alice_id', 'dedupe-1')
+               then 1 else 0 end), 1);
+select pg_temp.check('the same key cannot be claimed twice',
+  (select case when public.push_claim('test-secret-abc', :'alice_id', 'dedupe-1')
+               then 1 else 0 end), 0);
+-- Two statements, not one expression: push_release returns void, and relying on
+-- evaluation order inside a single AND is how you write a test that lies.
+select public.push_release('test-secret-abc', 'dedupe-1');
+select pg_temp.check('releasing a claim allows a retry',
+  (select case when public.push_claim('test-secret-abc', :'alice_id', 'dedupe-1')
+               then 1 else 0 end), 1);
+
+-- A dead endpoint is dropped so we stop pushing at an uninstalled app.
+select public.push_forget('test-secret-abc', 'https://push.example/alice') as forgotten \gset
+reset role;
+select pg_temp.check('push_forget removes the dead device',
+  (select count(*) from public.push_subscriptions
+   where endpoint = 'https://push.example/alice'), 0);
+
 reset role;
 \echo ''
 \echo '── done. Any FAIL / WARNING above is a security bug. ──────────────────'

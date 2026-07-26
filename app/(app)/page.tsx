@@ -4,6 +4,7 @@ import { format } from "date-fns";
 
 import { BOTTOM_NAV_SPACER } from "@/components/bottom-nav";
 import { InviteCode } from "@/components/invite-code";
+import { NotificationSettings } from "@/components/notification-settings";
 import { RefreshOnFocus } from "@/components/refresh-on-focus";
 import {
   countdownLabel,
@@ -289,6 +290,15 @@ export default async function Home() {
           </span>
         </Link>
       </section>
+
+      {/* Only shown once push is configured on the server. */}
+      {process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && (
+        <div className="mb-4">
+          <NotificationSettings
+            vapidPublicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+          />
+        </div>
+      )}
 
       <section className="card mb-4 px-4 py-2">
         <InviteCode code={member.inviteCode} />

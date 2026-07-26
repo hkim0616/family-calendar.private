@@ -438,3 +438,243 @@ $$;
 
 revoke all on function public.reset_calendar_token() from public;
 grant execute on function public.reset_calendar_token() to authenticated;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PUSH NOTIFICATIONS
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- One row per phone that has agreed to receive notifications.
+--
+-- `endpoint` is a capability URL issued by Apple or Google: whoever holds it can
+-- push to that device. It is treated as a secret — members can only ever see
+-- their own rows, not their family's.
+create table if not exists public.push_subscriptions (
+  id              uuid primary key default gen_random_uuid(),
+  family_id       uuid not null references public.families (id) on delete cascade,
+  member_id       uuid not null references public.members (id) on delete cascade,
+  endpoint        text not null unique,
+  -- The browser's public key and auth secret, needed to encrypt each payload.
+  p256dh          text not null,
+  auth            text not null,
+  -- Just for the settings screen: "iPhone", "Mac"…
+  device_label    text,
+  created_at      timestamptz not null default now(),
+  last_success_at timestamptz
+);
+
+create index if not exists push_subscriptions_family_idx
+  on public.push_subscriptions (family_id);
+
+-- Ledger of what has already been sent, so a notification can't go out twice.
+-- The unique dedupe_key is the mechanism: claiming a key and sending are two
+-- steps, and the claim fails if another run already took it.
+create table if not exists public.push_sends (
+  id         uuid primary key default gen_random_uuid(),
+  family_id  uuid not null references public.families (id) on delete cascade,
+  dedupe_key text not null unique,
+  sent_at    timestamptz not null default now()
+);
+
+alter table public.push_subscriptions enable row level security;
+alter table public.push_sends         enable row level security;
+
+-- Members manage only their own devices. There is deliberately no policy that
+-- lets one member read another's endpoint.
+drop policy if exists push_subscriptions_own on public.push_subscriptions;
+create policy push_subscriptions_own on public.push_subscriptions
+  for all to authenticated
+  using (
+    member_id in (
+      select id from public.members where auth_user_id = auth.uid()
+    )
+  )
+  with check (
+    member_id in (
+      select id from public.members where auth_user_id = auth.uid()
+    )
+    and family_id in (select public.my_family_ids())
+  );
+
+-- push_sends is bookkeeping for the scheduler. No client needs to read it, so
+-- RLS is enabled with no policy at all: that denies everything by default.
+
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Scheduler access
+--
+-- The nightly job runs as nobody — it has no login session — so it can't rely
+-- on RLS. Instead it presents a shared secret, and these SECURITY DEFINER
+-- functions check it before returning anything.
+--
+-- This is the same shape as the calendar feed: a narrow, purpose-built window
+-- guarded by a high-entropy secret, rather than a service-role key that would
+-- bypass RLS across the whole database.
+-- ───────────────────────────────────────────────────────────────────────────
+
+-- Holds the scheduler secret. Locked down: no policy, so no client can read it.
+create table if not exists public.app_config (
+  key   text primary key,
+  value text not null
+);
+
+alter table public.app_config enable row level security;
+
+create or replace function public.check_scheduler_secret(secret text)
+returns void
+language plpgsql
+security definer
+stable
+set search_path = public, extensions
+as $$
+declare
+  expected text;
+begin
+  select value into expected from public.app_config where key = 'push_cron_secret';
+
+  if expected is null then
+    raise exception 'Scheduler secret is not configured';
+  end if;
+
+  -- Compare digests so the comparison cost doesn't depend on how many leading
+  -- characters happen to match.
+  if digest(coalesce(secret, ''), 'sha256') is distinct from digest(expected, 'sha256') then
+    raise exception 'Unauthorized';
+  end if;
+end;
+$$;
+
+-- Everything the scheduler needs, in one call: each family with its
+-- anniversaries, how much is on the shopping list, and where to push.
+create or replace function public.push_due(secret text)
+returns jsonb
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  result jsonb;
+begin
+  perform public.check_scheduler_secret(secret);
+
+  select coalesce(jsonb_agg(family), '[]'::jsonb) into result
+  from (
+    select jsonb_build_object(
+      'family_id', f.id,
+      'family_name', f.name,
+      'anniversaries', coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'id', a.id,
+          'title', a.title,
+          'date', a.date,
+          'remind_days_before', a.remind_days_before
+        ))
+        from public.anniversaries a
+        where a.family_id = f.id
+      ), '[]'::jsonb),
+      'grocery_to_buy', (
+        select count(*) from public.grocery_items g
+        where g.family_id = f.id and g.checked = false
+      ),
+      'subscriptions', coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'endpoint', s.endpoint,
+          'p256dh', s.p256dh,
+          'auth', s.auth
+        ))
+        from public.push_subscriptions s
+        where s.family_id = f.id
+      ), '[]'::jsonb)
+    ) as family
+    from public.families f
+    -- Skip families with nobody to notify.
+    where exists (
+      select 1 from public.push_subscriptions s where s.family_id = f.id
+    )
+  ) families;
+
+  return result;
+end;
+$$;
+
+-- Claims a dedupe key. Returns true if this run got it, false if an earlier run
+-- already sent that notification.
+create or replace function public.push_claim(
+  secret text,
+  target_family_id uuid,
+  key text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.check_scheduler_secret(secret);
+
+  insert into public.push_sends (family_id, dedupe_key)
+  values (target_family_id, key)
+  on conflict (dedupe_key) do nothing;
+
+  return found;
+end;
+$$;
+
+-- Releases a claim, so a notification that failed to reach anyone is retried on
+-- the next run rather than being silently swallowed.
+create or replace function public.push_release(secret text, key text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.check_scheduler_secret(secret);
+  delete from public.push_sends where dedupe_key = key;
+end;
+$$;
+
+-- Drops a subscription the push service has told us is gone (HTTP 404 / 410),
+-- so we stop trying to reach an uninstalled app forever.
+create or replace function public.push_forget(secret text, dead_endpoint text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.check_scheduler_secret(secret);
+  delete from public.push_subscriptions where endpoint = dead_endpoint;
+end;
+$$;
+
+-- Records that a device was reached, which is what the settings screen shows.
+create or replace function public.push_touch(secret text, live_endpoint text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.check_scheduler_secret(secret);
+  update public.push_subscriptions
+  set last_success_at = now()
+  where endpoint = live_endpoint;
+end;
+$$;
+
+-- These are reachable with the public anon key, so each one re-checks the
+-- shared secret itself. Without the secret they return nothing and raise.
+revoke all on function public.check_scheduler_secret(text) from public;
+revoke all on function public.push_due(text)               from public;
+revoke all on function public.push_claim(text, uuid, text)  from public;
+revoke all on function public.push_release(text, text)      from public;
+revoke all on function public.push_forget(text, text)       from public;
+revoke all on function public.push_touch(text, text)        from public;
+
+grant execute on function public.push_due(text)              to anon, authenticated;
+grant execute on function public.push_claim(text, uuid, text) to anon, authenticated;
+grant execute on function public.push_release(text, text)     to anon, authenticated;
+grant execute on function public.push_forget(text, text)      to anon, authenticated;
+grant execute on function public.push_touch(text, text)       to anon, authenticated;
