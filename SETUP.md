@@ -116,6 +116,13 @@ Click **Save** on each.
 
 ## Step 5 — Deploy to Vercel
 
+> **First, check which branch is your default.** Vercel builds your repository's
+> default branch. If that branch is an old one, you will deploy an old app and
+> spend a long time wondering why. On GitHub: **Settings → General → Default
+> branch** — it should be the branch holding the finished app. Change it there
+> if not, or override it later in Vercel under **Settings → Git → Production
+> Branch**.
+
 1. Go to <https://vercel.com> and sign up with GitHub.
 2. Click **Add New** → **Project** and import this repository.
 3. **Before** clicking Deploy, expand **Environment Variables** and add both:
@@ -129,9 +136,17 @@ Click **Save** on each.
 5. Vercel gives you a URL like `https://family-hub-xyz.vercel.app`. That's your
    app.
 
-> Forgot the variables? The app will load but show "Missing environment
-> variable". Add them under **Project Settings → Environment Variables**, then
-> **Deployments → ⋯ → Redeploy**.
+> **A successful build does not mean it's configured.** The app builds fine
+> with no environment variables at all — it only complains when someone opens
+> it, with "Missing environment variable". If that happens, add them under
+> **Project Settings → Environment Variables**, then **Deployments → ⋯ →
+> Redeploy**. Environment variables are read at build time, so a redeploy is
+> always required after adding or changing one.
+
+> Use the **stable** production URL (`your-project.vercel.app`), not the long
+> per-deployment one (`your-project-a1b2c3-you.vercel.app`). The per-deployment
+> URL changes with every push, which would break sign-in and everyone's
+> home-screen icon.
 
 ## Step 6 — Tell Supabase about your URL
 
@@ -156,13 +171,20 @@ at the right place.
 ## Install it on your iPhone
 
 1. Open your Vercel URL in **Safari** (must be Safari — Chrome can't install).
-2. Tap the **Share** button (square with an arrow pointing up).
-3. Scroll down, tap **Add to Home Screen**, then **Add**.
+2. Tap the **Share** button (square with an arrow pointing up), in the toolbar
+   at the bottom of the screen.
+3. Scroll down the list, tap **Add to Home Screen**, then **Add** (top right).
 
 You now have a Family Hub icon that opens without any browser bar, like a normal
 app.
 
 On Android: open the URL in Chrome, then **⋮ → Add to Home screen**.
+
+> **Sharing the link over a messaging app?** KakaoTalk, LINE, Instagram and
+> similar open links inside their own built-in browser, which **cannot install
+> anything to the Home Screen** and keeps its own separate login. Tell whoever
+> you send it to: open the link, then use the in-app browser's menu to
+> **Open in Safari** first, and do the Add to Home Screen from there.
 
 ---
 
