@@ -114,6 +114,63 @@ Click **Save** on each.
 > hour. Fine for a family signing in once per device, but if you test repeatedly
 > you'll get rate-limited — just wait.
 
+## Step 4b — Connect a real email service
+
+**Do this before anyone else signs in.** Supabase's built-in email sender is for
+testing only: it allows as few as **2–4 messages per hour across the whole
+project**, and its messages often land in spam. Since every person needs an
+email each time they sign in on a new device, a family will hit that wall
+immediately — the symptom is `email rate limit exceeded`.
+
+Connecting your own sender takes about five minutes and is free at family
+volumes.
+
+### Get a sending key
+
+1. Sign up at <https://resend.com> and verify your email address.
+2. Go to **API Keys** → **Create API Key** → copy it.
+
+### Point Supabase at it
+
+In the **left sidebar** under **Authentication** → **Emails** → **SMTP
+Settings** tab. (SMTP is *not* under Project Settings in current dashboards.)
+Direct link:
+
+```
+https://supabase.com/dashboard/project/<your-project-ref>/auth/smtp
+```
+
+Turn on **Enable Custom SMTP** and fill in:
+
+| Field         | Value                    |
+| ------------- | ------------------------ |
+| Host          | `smtp.resend.com`        |
+| Port          | `465`                    |
+| Username      | `resend`                 |
+| Password      | your Resend API key      |
+| Sender email  | `onboarding@resend.dev`  |
+| Sender name   | `Family Hub`             |
+
+**Save.**
+
+> `onboarding@resend.dev` is Resend's shared test sender. It works with no
+> domain setup, but it only delivers to the address you signed up with — fine
+> for getting yourself in, not enough for the rest of the family. Before they
+> join, either verify a domain in Resend (**Domains → Add Domain**) and use an
+> address on it, or use another provider.
+
+### Raise the limit
+
+**Authentication** → **Rate Limits** → set emails per hour to something sane
+like 30:
+
+```
+https://supabase.com/dashboard/project/<your-project-ref>/auth/rate-limits
+```
+
+> **Already hit the limit?** It's a rolling window — wait about an hour, or
+> configure SMTP above, which resets the constraint immediately.
+
 ## Step 5 — Deploy to Vercel
 
 > **First, check which branch is your default.** Vercel builds your repository's
@@ -236,7 +293,8 @@ link (see the note in Step 6).
 | "Missing environment variable…"                  | Step 5 — add both variables in Vercel, then redeploy.                          |
 | Sign-in screen loads, but nothing else works     | Step 3 — the schema script probably wasn't run.                               |
 | Email has a link but no 6-digit code             | Step 4 — the template still needs `{{ .Token }}`.                              |
-| No email arrives                                 | Check spam. If you've signed in a few times this hour, wait — see Step 4.      |
+| No email arrives                                 | Check spam. If you've signed in a few times this hour, wait — see Step 4b.     |
+| `email rate limit exceeded`                      | Step 4b — the built-in sender allows only a few per hour. Connect real SMTP.    |
 | Tapping the link says "invalid request" / expired | Step 4 — the template must use the `token_hash` link shown there.              |
 | Link opens the wrong site                        | Step 6 — **Site URL** is what `{{ .SiteURL }}` becomes.                        |
 | "requested path is invalid" after tapping        | Step 6 — add your URL under **Redirect URLs**.                                 |
