@@ -7,6 +7,14 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Mode = "email" | "sent" | "code";
 
+/**
+ * Supabase's email OTP length is a project setting, adjustable from 6 to 10
+ * digits (Authentication → Providers → Email). Accept the whole range rather
+ * than assuming the default.
+ */
+const MIN_CODE_LENGTH = 6;
+const MAX_CODE_LENGTH = 10;
+
 const LINK_EXPIRED_MESSAGE =
   "That sign-in link didn't work — it may have expired or already been used. Request a new one below.";
 
@@ -102,7 +110,7 @@ export function LoginForm() {
           </button>
 
           <p className="muted text-center text-xs">
-            No password needed. We&apos;ll email you a link to tap.
+            No password needed. We&apos;ll email you a link and a code.
           </p>
         </form>
       )}
@@ -119,7 +127,7 @@ export function LoginForm() {
           </div>
 
           {/*
-              The same email also contains a 6-digit code. It's the reliable
+              The same email also contains a numeric code. It's the reliable
               path on iPhone: tapping the link opens Safari, which lands you
               outside the installed app, whereas typing the code keeps you in it.
             */}
@@ -131,7 +139,7 @@ export function LoginForm() {
               setError(null);
             }}
           >
-            Enter the 6-digit code instead
+            Enter the code instead
           </button>
 
           <button
@@ -162,12 +170,17 @@ export function LoginForm() {
               // Lets iOS offer the code straight from the notification.
               autoComplete="one-time-code"
               placeholder="123456"
-              maxLength={6}
+              // Supabase's OTP length is configurable (6–10 digits), so don't
+              // hard-code 6 — a project set to 8 would otherwise have a field
+              // that physically cannot accept its own code.
+              maxLength={MAX_CODE_LENGTH}
               value={code}
               onChange={(e) =>
-                setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                setCode(
+                  e.target.value.replace(/\D/g, "").slice(0, MAX_CODE_LENGTH),
+                )
               }
-              required
+              aria-required="true"
               autoFocus
             />
           </div>
@@ -175,7 +188,7 @@ export function LoginForm() {
           <button
             type="submit"
             className="btn btn-primary w-full"
-            disabled={busy || code.length !== 6}
+            disabled={busy || code.length < MIN_CODE_LENGTH}
           >
             {busy ? "Signing in…" : "Sign in"}
           </button>

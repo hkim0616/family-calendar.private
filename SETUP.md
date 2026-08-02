@@ -107,7 +107,7 @@ Click **Save** on each.
 
 > **Why the code as well?** On an iPhone, tapping the link opens Safari — which
 > means you land signed-in *in Safari*, while the app on your home screen is
-> still signed out. Typing the 6-digit code keeps you inside the installed app.
+> still signed out. Typing the code keeps you inside the installed app.
 > Both work; the code is the smoother one once the app is on your home screen.
 
 > **Email limits:** Supabase's built-in sender allows only a few messages per
@@ -221,7 +221,7 @@ at the right place.
 
 > Note that `{{ .SiteURL }}` in the email always uses the **Site URL** above. So
 > a link emailed while Site URL points at Vercel will open the Vercel app even if
-> you requested it from localhost. For local testing, use the 6-digit code.
+> you requested it from localhost. For local testing, use the emailed code.
 
 ---
 
@@ -281,7 +281,7 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:3000>. Sign in with the **6-digit code** rather than the
+Open <http://localhost:3000>. Sign in with the **emailed code** rather than the
 link (see the note in Step 6).
 
 ---
@@ -292,13 +292,14 @@ link (see the note in Step 6).
 | ------------------------------------------------ | ----------------------------------------------------------------------------- |
 | "Missing environment variable…"                  | Step 5 — add both variables in Vercel, then redeploy.                          |
 | Sign-in screen loads, but nothing else works     | Step 3 — the schema script probably wasn't run.                               |
-| Email has a link but no 6-digit code             | Step 4 — the template still needs `{{ .Token }}`.                              |
+| Email has a link but no code                     | Step 4 — the template still needs `{{ .Token }}`.                              |
+| The code is longer than the box allows           | Fixed — the app accepts 6–10 digits. You can also set the length under **Authentication → Providers → Email → Email OTP Length**. |
 | No email arrives                                 | Check spam. If you've signed in a few times this hour, wait — see Step 4b.     |
 | `email rate limit exceeded`                      | Step 4b — the built-in sender allows only a few per hour. Connect real SMTP.    |
 | Tapping the link says "invalid request" / expired | Step 4 — the template must use the `token_hash` link shown there.              |
 | Link opens the wrong site                        | Step 6 — **Site URL** is what `{{ .SiteURL }}` becomes.                        |
 | "requested path is invalid" after tapping        | Step 6 — add your URL under **Redirect URLs**.                                 |
-| Signed in on Safari but home-screen app is not   | Expected on iOS. Open the installed app and use the 6-digit code instead.      |
+| Signed in on Safari but home-screen app is not   | Expected on iOS. Open the installed app and use the emailed code instead.      |
 | Code rejected as invalid                         | Codes expire after an hour. Request a fresh one.                              |
 | Stuck on "Set up your family"                    | Step 3 — `create_family` comes from the schema script.                        |
 | A date isn't on Home yet                         | Home shows the next 30 days only. The Dates tab lists everything.              |

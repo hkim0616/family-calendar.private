@@ -280,7 +280,7 @@ supabase/
 
 ## Notes
 
-- **Sign-in is a magic link, with a 6-digit code as a second option in the same
+- **Sign-in is a magic link, with a numeric code as a second option in the same
   email.** The link is verified server-side at `/auth/callback` from a
   `token_hash`, rather than via the PKCE `?code=` flow, so it works no matter
   which browser opens it — tapping a link in the iOS Mail app doesn't reliably
