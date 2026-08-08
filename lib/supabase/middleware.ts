@@ -18,6 +18,9 @@ const PUBLIC_PATHS = [
   "/offline",
   "/api/calendar",
   "/api/push/run",
+  // Invite links land here before sign-in; the route just parks the code in a
+  // cookie and forwards on, so it must not be bounced to /login first.
+  "/join",
 ];
 
 function isPublicPath(pathname: string): boolean {

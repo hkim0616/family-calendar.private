@@ -1,8 +1,10 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
+import { INVITE_COOKIE } from "@/lib/invite";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type CreateFamilyState = { error: string | null };
@@ -39,6 +41,8 @@ export async function createFamilyAction(
 
   if (error) return { error: error.message };
 
+  // They started their own family, so any parked invite is moot.
+  cookies().delete(INVITE_COOKIE);
   revalidatePath("/");
   redirect("/");
 }
@@ -74,6 +78,7 @@ export async function joinFamilyAction(
 
   if (error) return { error: error.message };
 
+  cookies().delete(INVITE_COOKIE);
   revalidatePath("/");
   redirect("/");
 }

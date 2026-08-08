@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getCurrentMember } from "@/lib/family";
+import { INVITE_COOKIE, normaliseInviteCode } from "@/lib/invite";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 import { CreateFamilyForm } from "./create-family-form";
@@ -31,20 +33,27 @@ export default async function OnboardingPage() {
   const member = await getCurrentMember();
   if (member) redirect("/");
 
+  // Set by /join/<code> if they arrived from an invite link.
+  const invited = normaliseInviteCode(cookies().get(INVITE_COOKIE)?.value);
+
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-5 py-10">
       <div className="mb-6 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">
-          Set up your family
+          {invited ? "Join your family" : "Set up your family"}
         </h1>
         <p className="muted mt-2 text-sm">
-          Start a new family, or join one someone already made. Everything in
-          Family Hub is shared inside your family and visible to nobody else.
+          {invited
+            ? "You've been invited. Add your name and you're in — everything in Family Hub is shared inside your family and visible to nobody else."
+            : "Start a new family, or join one someone already made. Everything in Family Hub is shared inside your family and visible to nobody else."}
         </p>
       </div>
 
       <div className="card p-5">
-        <CreateFamilyForm suggestedName={guessNameFromEmail(user.email)} />
+        <CreateFamilyForm
+          suggestedName={guessNameFromEmail(user.email)}
+          invitedCode={invited}
+        />
       </div>
 
       <form action="/auth/signout" method="post" className="mt-4">

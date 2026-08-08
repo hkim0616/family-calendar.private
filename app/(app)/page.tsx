@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { format } from "date-fns";
 
 import { BOTTOM_NAV_SPACER } from "@/components/bottom-nav";
-import { InviteCode } from "@/components/invite-code";
+import { InviteLink } from "@/components/invite-link";
 import { NotificationSettings } from "@/components/notification-settings";
 import { RefreshOnFocus } from "@/components/refresh-on-focus";
 import {
@@ -300,8 +300,13 @@ export default async function Home() {
         </div>
       )}
 
-      <section className="card mb-4 px-4 py-2">
-        <InviteCode code={member.inviteCode} />
+      <section className="card mb-4 p-4">
+        <h2 className="text-sm font-semibold">Invite your family</h2>
+        <p className="muted mb-3 mt-1 text-xs">
+          Send the link. They sign in with their own email and land straight in
+          this family — nothing to type in.
+        </p>
+        <InviteLink code={member.inviteCode} />
       </section>
 
       <div

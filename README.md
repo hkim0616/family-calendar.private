@@ -230,6 +230,7 @@ app/
   api/push/subscribe/        Stores a device's push subscription
   api/push/run/              Nightly scheduler target
   onboarding/                Create-or-join-a-family screen + server actions
+  join/[code]/               Invite link — parks the code and forwards on
   login/page.tsx             Magic-link sign-in (with code fallback)
   offline/page.tsx           Shown when the phone has no connection
   auth/callback/route.ts     Verifies the link from the sign-in email
@@ -240,7 +241,7 @@ components/
   bottom-nav.tsx             Tab bar
   notification-settings.tsx  "Turn on reminders" + iOS install guidance
   refresh-on-focus.tsx       Refreshes the dashboard on return to foreground
-  invite-code.tsx            Invite code with tap-to-copy
+  invite-link.tsx            Invite link with native share / copy
   live-badge.tsx             Realtime connection indicator
   service-worker-registrar.tsx
 lib/
@@ -248,6 +249,7 @@ lib/
   calendar.ts                Month grid, day grouping (unit-tested)
   env.ts                     Reads env vars with helpful errors
   family.ts                  Current member + family lookup
+  invite.ts                  Invite code parsing + link building (unit-tested)
   ics.ts                     iCalendar feed builder (unit-tested)
   push/plan.ts               Decides which reminders are due (unit-tested)
   realtime-merge.ts          Pure list-merge helpers (unit-tested)

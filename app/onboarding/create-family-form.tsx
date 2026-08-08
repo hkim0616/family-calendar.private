@@ -14,8 +14,18 @@ function SubmitButton({ label, pendingLabel }: { label: string; pendingLabel: st
   );
 }
 
-export function CreateFamilyForm({ suggestedName }: { suggestedName: string }) {
-  const [tab, setTab] = useState<"create" | "join">("create");
+export function CreateFamilyForm({
+  suggestedName,
+  invitedCode,
+}: {
+  suggestedName: string;
+  /** Set when they arrived from an invite link — see lib/invite.ts. */
+  invitedCode?: string | null;
+}) {
+  // An invited person came here to join, so start them on that tab.
+  const [tab, setTab] = useState<"create" | "join">(
+    invitedCode ? "join" : "create",
+  );
   const [createState, createAction] = useFormState(createFamilyAction, {
     error: null,
   });
@@ -117,6 +127,7 @@ export function CreateFamilyForm({ suggestedName }: { suggestedName: string }) {
               name="inviteCode"
               className="input text-center text-lg tracking-[0.3em]"
               placeholder="A3F91C2B"
+              defaultValue={invitedCode ?? ""}
               autoCapitalize="characters"
               autoCorrect="off"
               spellCheck={false}
@@ -124,7 +135,9 @@ export function CreateFamilyForm({ suggestedName }: { suggestedName: string }) {
               required
             />
             <p className="muted mt-2 text-xs">
-              Ask whoever set up the family — it&apos;s on their Home screen.
+              {invitedCode
+                ? "Filled in from your invite link."
+                : "Ask whoever set up the family — it's on their Home screen."}
             </p>
           </div>
 

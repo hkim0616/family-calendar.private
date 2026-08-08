@@ -245,6 +245,30 @@ On Android: open the URL in Chrome, then **⋮ → Add to Home screen**.
 
 ---
 
+## Inviting the rest of the family
+
+On the Home screen, under **Invite your family**, tap **Share invite link** —
+that opens your phone's share sheet, so you can send it straight to KakaoTalk,
+Messages or anywhere else. **Copy invite link** is there if you'd rather paste
+it yourself.
+
+Whoever receives it taps the link, signs in with their own email, and lands on
+a join screen with the family code already filled in — they only add their
+name. The code is still shown underneath the link, for reading out loud or
+typing on a device that can't open it.
+
+> **They need to be able to receive email.** Each person signs in with their own
+> address, so if you're still on the built-in Supabase sender — or on Resend's
+> shared `onboarding@resend.dev`, which only delivers to your own address —
+> nobody else will get their sign-in email. See Step 4b.
+
+> The invite link works for anyone who has it, so keep it to the people you mean
+> to add. If it gets somewhere you didn't intend, the family's code can be
+> changed by re-running the `families` insert — ask and I'll add a rotate
+> button.
+
+---
+
 ## Running it on your own computer
 
 Only needed if you want to try changes before they go live.
