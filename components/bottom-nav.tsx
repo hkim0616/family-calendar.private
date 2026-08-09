@@ -12,6 +12,13 @@ const TABS = [
 ];
 
 export function BottomNav() {
+  // No useTransition/pending state here on purpose. The tab highlight already
+  // moves the instant a tab is tapped, because `app/(app)/loading.tsx` lets the
+  // route commit immediately instead of blocking on the server — and
+  // `usePathname` updates with it. Without that loading boundary the whole bar
+  // sits frozen until the next screen arrives, which is what made taps feel
+  // ignored; adding client-side pending state instead of the boundary would
+  // paper over it without making anything actually appear sooner.
   const pathname = usePathname();
 
   return (
@@ -32,11 +39,13 @@ export function BottomNav() {
               <Link
                 href={href}
                 aria-current={active ? "page" : undefined}
-                className="flex flex-col items-center justify-center gap-1 py-2"
+                className="tap flex flex-col items-center justify-center gap-1 py-2"
                 style={{
                   minHeight: 52,
                   color: active ? "var(--accent)" : "var(--text-muted)",
-                  WebkitTapHighlightColor: "transparent",
+                  // Colour only — the pressed state must not be eased, or the
+                  // feedback arrives after the finger has already lifted.
+                  transition: "color 120ms ease",
                 }}
               >
                 <Icon filled={active} />

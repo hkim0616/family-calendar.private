@@ -16,7 +16,7 @@ import {
   type Anniversary,
 } from "@/lib/anniversaries";
 import { eventDayKeys, type CalendarEvent } from "@/lib/calendar";
-import { getCurrentMember } from "@/lib/family";
+import { getCurrentMember, getSessionUser } from "@/lib/family";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 // Aggregates live data, so never statically cached.
@@ -54,12 +54,10 @@ function SectionHeading({
 
 export default async function Home() {
   const supabase = createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
   // middleware.ts already redirects signed-out visitors, but a page that shows
-  // family data shouldn't rely on that alone.
+  // family data shouldn't rely on that alone. Shares the layout's lookup.
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
   const member = await getCurrentMember();
@@ -156,7 +154,7 @@ export default async function Home() {
               <li key={event.id} className="card">
                 <Link
                   href="/schedule"
-                  className="flex items-start gap-3 px-3 py-2"
+                  className="tap flex items-start gap-3 px-3 py-2"
                   style={{ minHeight: 52 }}
                 >
                   <span
@@ -209,7 +207,7 @@ export default async function Home() {
                 >
                   <Link
                     href="/anniversaries"
-                    className="flex items-center gap-3 px-3 py-2"
+                    className="tap flex items-center gap-3 px-3 py-2"
                     style={{ minHeight: 52 }}
                   >
                     <span className="min-w-0 flex-1">
@@ -259,7 +257,7 @@ export default async function Home() {
               <li key={memo.id} className="card">
                 <Link
                   href="/memos"
-                  className="block px-3 py-2 text-sm"
+                  className="tap block px-3 py-2 text-sm"
                   style={{ minHeight: 44 }}
                 >
                   {memo.body}
@@ -281,7 +279,7 @@ export default async function Home() {
       {/* ── Groceries ── */}
       <section className="mb-5">
         <SectionHeading title="Groceries" href="/groceries" action="Open list" />
-        <Link href="/groceries" className="card flex items-center gap-3 p-4">
+        <Link href="/groceries" className="tap card flex items-center gap-3 p-4">
           <span className="text-2xl font-semibold">{toBuy}</span>
           <span className="muted text-sm">
             {toBuy === 0

@@ -158,6 +158,28 @@ select pg_temp.check('re-joining does not duplicate membership',
   (select count(*) from public.members where auth_user_id = auth.uid()), 2);
 
 \echo ''
+\echo '── "who am I?" must mean the caller, not the family founder ───────────'
+-- Bob can read Alice's member row, on purpose: the UI names who wrote what.
+-- That breadth is exactly why lib/family.ts has to filter on auth_user_id —
+-- reading `members` unfiltered hands you the wrong person.
+select pg_temp.check('whole family roster visible to any member',
+  (select count(*) from public.members where family_id = :'alice_family'), 2);
+
+-- The founder always sorts first, so an unfiltered "oldest row" lookup greets
+-- everyone in the family by the founder's name and posts as them.
+select pg_temp.check('the founder''s row is the oldest in the family',
+  (select count(*) from public.members a, public.members b
+   where a.family_id = :'alice_family' and b.family_id = :'alice_family'
+     and a.name = 'Alice' and b.name = 'Bob'
+     and a.created_at <= b.created_at), 1);
+
+-- The query lib/family.ts actually runs, from Bob's session.
+select pg_temp.check('filtering on auth_user_id identifies the caller',
+  (select count(*) from public.members
+   where auth_user_id = auth.uid()
+     and family_id = :'alice_family' and name = 'Bob'), 1);
+
+\echo ''
 \echo '── signed-out users ───────────────────────────────────────────────────'
 reset role; set role anon;
 set request.jwt.claim.sub = '';
